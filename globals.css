@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #070b08; color: #f2f6f2; font-family: 'Manrope', Arial, sans-serif; }
+.shell { min-height: 100vh; padding: 28px 6vw 70px; background: radial-gradient(ellipse at 50% 0%, #173a27 0%, #0b1710 34%, #070b08 72%); }
+.topline { max-width: 1100px; margin: 0 auto; color: #8da895; font: 11px 'DM Mono', monospace; letter-spacing: .16em; }
+.dot { display: inline-block; width: 7px; height: 7px; margin-right: 9px; border-radius: 50%; background: #75e6a0; box-shadow: 0 0 12px #75e6a0; }
+.hero { max-width: 760px; margin: 13vh auto 0; }
+.brand { color: #f4f8f4; font-size: 13px; font-weight: 800; letter-spacing: .2em; }
+.brand span { color: #75e6a0; }
+h1 { margin: 28px 0 12px; font-size: clamp(40px, 7vw, 72px); line-height: 1.05; letter-spacing: -.055em; }
+h1 em { color: #75e6a0; font-style: normal; }
+.intro { color: #9caea1; margin-bottom: 38px; }
+.topic-form { padding: 22px; border: 1px solid #284735; border-radius: 16px; background: rgba(9, 19, 13, .78); box-shadow: 0 24px 80px #0005; }
+.topic-form label, .result-kicker { display: block; margin-bottom: 13px; color: #8fa998; font: 10px 'DM Mono', monospace; letter-spacing: .15em; }
+textarea { width: 100%; min-height: 115px; resize: vertical; border: 0; outline: 0; background: transparent; color: white; font: 16px 'Manrope', sans-serif; }
+textarea::placeholder { color: #607366; }
+.form-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid #203629; padding-top: 16px; }
+.form-footer > span { color: #708477; font: 11px 'DM Mono', monospace; }
+button { border: 0; border-radius: 9px; padding: 13px 18px; background: #75e6a0; color: #07120b; font: 800 11px 'DM Mono', monospace; letter-spacing: .05em; cursor: pointer; }
+button:disabled { opacity: .45; cursor: wait; }
+button span { margin-left: 12px; }
+.error { color: #ff9d9d; }
+.result { margin-top: 28px; padding: 24px; border: 1px solid #284735; border-radius: 16px; background: #0b1710; }
+.result h2 { margin-top: 0; }
+.result pre { white-space: pre-wrap; color: #d7e4da; font: 14px/1.8 'Manrope', sans-serif; }
+.result h3 { margin-top: 28px; color: #75e6a0; font: 11px 'DM Mono', monospace; }
+.result li { margin: 10px 0; color: #c1d0c5; }
+.footnote { margin-top: 24px; color: #65796b; font-size: 11px; line-height: 1.6; }
+@media (max-width: 600px) { .shell { padding: 22px 18px 50px; } .hero { margin-top: 10vh; } .topic-form { padding: 17px; } }
