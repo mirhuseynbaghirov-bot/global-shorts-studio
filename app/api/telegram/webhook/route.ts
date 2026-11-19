@@ -3,12 +3,12 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Əvvəl əsas model, məşğuldursa ehtiyat modellər
+// Hər cəhd fərqli model: biri məşğuldursa növbətiyə keçir
 const ATTEMPTS = [
   "gemini-3.8-flash",
-  "gemini-3.8-flash",
   "gemini-3.7-flash",
-  "gemini-3.6-flash"
+  "gemini-3.6-flash",
+  "gemini-3.5-flash-lite"
 ];
 
 const RETRY_STATUS = [429, 500, 502, 503, 504];
@@ -54,18 +54,16 @@ async function sendMessage(chatId: number, text: string) {
 
 async function callGemini(key: string, prompt: string) {
   const deadline = Date.now() + 52000;
-  let lastError = "Gemini cavab vermədi.";
-  const tried: string[] = [];
+  const log: string[] = [];
 
   for (const model of ATTEMPTS) {
     const remaining = deadline - Date.now();
-    if (remaining < 6000) break;
+    if (remaining < 5000) break;
 
-    tried.push(model);
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(),
-      Math.min(25000, remaining - 2000)
+      Math.min(13000, remaining - 1500)
     );
 
     try {
@@ -78,7 +76,10 @@ async function callGemini(key: string, prompt: string) {
             "x-goog-api-key": key
           },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }]
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              thinkingConfig: { thinkingLevel: "low" }
+            }
           }),
           signal: controller.signal
         }
@@ -89,23 +90,23 @@ async function callGemini(key: string, prompt: string) {
       if (res.ok) {
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return text as string;
-        lastError = `${model}: boş cavab qaytardı.`;
+        log.push(`${model}: boş cavab`);
         continue;
       }
 
-      const msg = data.error?.message || "naməlum";
-      lastError = `${model} (kod ${res.status}): ${msg}`;
+      const msg = (data.error?.message || "naməlum").slice(0, 150);
+      log.push(`${model}: kod ${res.status} - ${msg}`);
 
       if (RETRY_STATUS.includes(res.status) || res.status === 404) {
-        await sleep(1500);
+        await sleep(1000);
         continue;
       }
 
       // 400, 401, 403 kimi xətalar təkrarla düzəlmir
-      throw new Error(`Gemini xətası, ${lastError}`);
+      throw new Error(`Gemini xətası:\n${log.join("\n")}`);
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
-        lastError = `${model}: cavab gec gəldi.`;
+        log.push(`${model}: 13 saniyədə cavab gəlmədi`);
         continue;
       }
       throw e;
@@ -115,7 +116,7 @@ async function callGemini(key: string, prompt: string) {
   }
 
   throw new Error(
-    `Gemini hazırda məşğuldur. Sınanan modellər: ${tried.join(", ")}.\nSon xəta: ${lastError}\nBir az sonra yenidən cəhd et.`
+    `Gemini cavab vermədi. Cəhdlər:\n${log.join("\n")}\nBir az sonra yenidən cəhd et.`
   );
 }
 
