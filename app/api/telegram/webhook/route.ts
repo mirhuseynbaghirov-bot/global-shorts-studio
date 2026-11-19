@@ -1,31 +1,29 @@
+
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Hər cəhd fərqli model: biri məşğuldursa növbətiyə keçir
 const ATTEMPTS = [
-  "gemini-3.8-flash",
-  "gemini-3.7-flash",
-  "gemini-3.6-flash",
-  "gemini-3.5-flash-lite"
+  "gemini-3.5-flash-lite",
+  "gemini-3.8-flash"
 ];
-
-const RETRY_STATUS = [429, 500, 502, 503, 504];
 
 function clean(text: string) {
   let out = text;
+
   for (const secret of [
     process.env.TELEGRAM_BOT_TOKEN,
     process.env.GEMINI_API_KEY
   ]) {
     if (secret) out = out.split(secret).join("***");
   }
+
   return out;
 }
 
 function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function sendMessage(chatId: number, text: string) {
@@ -44,8 +42,9 @@ async function sendMessage(chatId: number, text: string) {
         })
       }
     );
+
     if (!res.ok) {
-      console.error("Telegram sendMessage xətası:", res.status);
+      console.error("Telegram xətası:", res.status);
     }
   } catch {
     console.error("Telegram şəbəkə xətası");
@@ -58,12 +57,14 @@ async function callGemini(key: string, prompt: string) {
 
   for (const model of ATTEMPTS) {
     const remaining = deadline - Date.now();
+
     if (remaining < 5000) break;
 
     const controller = new AbortController();
+
     const timer = setTimeout(
       () => controller.abort(),
-      Math.min(13000, remaining - 1500)
+      Math.min(22000, remaining - 1500)
     );
 
     try {
@@ -76,9 +77,17 @@ async function callGemini(key: string, prompt: string) {
             "x-goog-api-key": key
           },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
+            contents: [
+              {
+                parts: [{ text: prompt }]
+              }
+            ],
             generationConfig: {
-              thinkingConfig: { thinkingLevel: "low" }
+              thinkingConfig: {
+                thinkingLevel: "low"
+              },
+              maxOutputTokens: 1200,
+              temperature: 0.7
             }
           }),
           signal: controller.signal
@@ -88,35 +97,50 @@ async function callGemini(key: string, prompt: string) {
       const data = await res.json();
 
       if (res.ok) {
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return text as string;
+        const result = data.candidates?.[0]?.content?.parts
+          ?.map((part: { text?: string }) => part.text || "")
+          .join("")
+          .trim();
+
+        if (result) return result;
+
         log.push(`${model}: boş cavab`);
         continue;
       }
 
-      const msg = (data.error?.message || "naməlum").slice(0, 150);
+      const msg = (
+        data.error?.message || "Naməlum xəta"
+      ).slice(0, 150);
+
       log.push(`${model}: kod ${res.status} - ${msg}`);
 
-      if (RETRY_STATUS.includes(res.status) || res.status === 404) {
+      if ([429, 500, 502, 503, 504, 404].includes(res.status)) {
         await sleep(1000);
         continue;
       }
 
-      // 400, 401, 403 kimi xətalar təkrarla düzəlmir
-      throw new Error(`Gemini xətası:\n${log.join("\n")}`);
-    } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") {
-        log.push(`${model}: 13 saniyədə cavab gəlmədi`);
+      throw new Error(
+        `Gemini xətası:\n${log.join("\n")}`
+      );
+
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.name === "AbortError"
+      ) {
+        log.push(`${model}: vaxt limiti keçildi`);
         continue;
       }
-      throw e;
+
+      throw error;
+
     } finally {
       clearTimeout(timer);
     }
   }
 
   throw new Error(
-    `Gemini cavab vermədi. Cəhdlər:\n${log.join("\n")}\nBir az sonra yenidən cəhd et.`
+    `Gemini cavab vermədi.\n${log.join("\n")}\nBir az sonra yenidən yoxla.`
   );
 }
 
@@ -125,7 +149,9 @@ export async function POST(request: Request) {
 
   try {
     const update = await request.json();
+
     chatId = update.message?.chat?.id;
+
     const message = update.message?.text?.trim();
 
     if (!chatId || !message) {
@@ -137,40 +163,80 @@ export async function POST(request: Request) {
         chatId,
         "GLOBAL SHORTS STUDIO hazırdır! Mövzunu göndər."
       );
+
       return NextResponse.json({ ok: true });
     }
 
-    await sendMessage(chatId, "Mövzu qəbul edildi. Hazırlanır...");
+    await sendMessage(
+      chatId,
+      "Mövzu qəbul edildi. Hazırlanır..."
+    );
 
     const key = process.env.GEMINI_API_KEY;
+
     if (!key) {
-      throw new Error("GEMINI_API_KEY Vercel-də tapılmadı.");
+      throw new Error(
+        "GEMINI_API_KEY Vercel-də tapılmadı."
+      );
     }
 
-    const prompt = `Azərbaycan dilində 45-60 saniyəlik maraqlı YouTube Shorts ssenarisi hazırla.
+    const prompt = `Sən GLOBAL SHORTS STUDIO adlı peşəkar video ssenarisi hazırlayan AI sistemisən.
+
+Azərbaycan dilində 45-60 saniyəlik maraqlı YouTube Shorts ssenarisi hazırla.
+
 Mövzu: ${message}
-Başlıq, ssenari və 4 vizual səhnə təsviri ver. Fakt uydurma.`;
+
+Tələblər:
+1. Güclü və maraqlı başlıq yaz.
+2. İlk saniyələrdə izləyicinin diqqətini çəkən giriş hazırla.
+3. Sadə, axıcı və təbii Azərbaycan dilindən istifadə et.
+4. Faktları uydurma.
+5. Ssenarini 45-60 saniyəlik danışıq müddətinə uyğun hazırla.
+6. Sonda 4 vizual səhnə təsviri ver.
+7. Ssenari ilə vizual təsvirləri ayrı bölmələrdə təqdim et.
+
+Format:
+
+BAŞLIQ:
+...
+
+SSENARİ:
+...
+
+VİZUAL SƏHNƏLƏR:
+1. ...
+2. ...
+3. ...
+4. ...`;
 
     const result = await callGemini(key, prompt);
 
     await sendMessage(chatId, result);
+
     return NextResponse.json({ ok: true });
+
   } catch (error) {
     console.error(error);
 
     const reason =
-      error instanceof Error ? error.message : "Naməlum xəta";
+      error instanceof Error
+        ? error.message
+        : "Naməlum xəta";
 
     if (chatId) {
-      await sendMessage(chatId, "❌ Xəta baş verdi:\n" + clean(reason));
+      await sendMessage(
+        chatId,
+        "❌ Xəta baş verdi:\n" + clean(reason)
+      );
     }
+
     return NextResponse.json({ ok: true });
   }
 }
 
 export async function GET() {
   return NextResponse.json({
-    status: "Telegram webhook hazırdır",
+    status: "GLOBAL SHORTS STUDIO hazırdır",
     models: ATTEMPTS
   });
 }
