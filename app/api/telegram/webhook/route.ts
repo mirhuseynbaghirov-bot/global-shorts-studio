@@ -3,7 +3,15 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const GEMINI_MODEL = "gemini-3.8-flash";
+// Əvvəl əsas model, məşğuldursa ehtiyat modellər
+const ATTEMPTS = [
+  "gemini-3.8-flash",
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash"
+];
+
+const RETRY_STATUS = [429, 500, 502, 503, 504];
 
 function clean(text: string) {
   let out = text;
@@ -14,6 +22,10 @@ function clean(text: string) {
     if (secret) out = out.split(secret).join("***");
   }
   return out;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function sendMessage(chatId: number, text: string) {
@@ -35,9 +47,76 @@ async function sendMessage(chatId: number, text: string) {
     if (!res.ok) {
       console.error("Telegram sendMessage xətası:", res.status);
     }
-  } catch (e) {
+  } catch {
     console.error("Telegram şəbəkə xətası");
   }
+}
+
+async function callGemini(key: string, prompt: string) {
+  const deadline = Date.now() + 52000;
+  let lastError = "Gemini cavab vermədi.";
+  const tried: string[] = [];
+
+  for (const model of ATTEMPTS) {
+    const remaining = deadline - Date.now();
+    if (remaining < 6000) break;
+
+    tried.push(model);
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      Math.min(25000, remaining - 2000)
+    );
+
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": key
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }]
+          }),
+          signal: controller.signal
+        }
+      );
+
+      const data = await res.json();
+
+      if (res.ok) {
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text as string;
+        lastError = `${model}: boş cavab qaytardı.`;
+        continue;
+      }
+
+      const msg = data.error?.message || "naməlum";
+      lastError = `${model} (kod ${res.status}): ${msg}`;
+
+      if (RETRY_STATUS.includes(res.status) || res.status === 404) {
+        await sleep(1500);
+        continue;
+      }
+
+      // 400, 401, 403 kimi xətalar təkrarla düzəlmir
+      throw new Error(`Gemini xətası, ${lastError}`);
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        lastError = `${model}: cavab gec gəldi.`;
+        continue;
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  throw new Error(
+    `Gemini hazırda məşğuldur. Sınanan modellər: ${tried.join(", ")}.\nSon xəta: ${lastError}\nBir az sonra yenidən cəhd et.`
+  );
 }
 
 export async function POST(request: Request) {
@@ -71,54 +150,15 @@ export async function POST(request: Request) {
 Mövzu: ${message}
 Başlıq, ssenari və 4 vizual səhnə təsviri ver. Fakt uydurma.`;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 50000);
-
-    let response: Response;
-    try {
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": key
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }]
-          }),
-          signal: controller.signal
-        }
-      );
-    } finally {
-      clearTimeout(timer);
-    }
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        `Gemini xətası (kod ${response.status}): ` +
-          (data.error?.message || "naməlum")
-      );
-    }
-
-    const result =
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Gemini boş cavab qaytardı.";
+    const result = await callGemini(key, prompt);
 
     await sendMessage(chatId, result);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error(error);
 
-    let reason = "Naməlum xəta";
-    if (error instanceof Error) {
-      reason =
-        error.name === "AbortError"
-          ? "Gemini 50 saniyə ərzində cavab vermədi (vaxt bitdi)."
-          : error.message;
-    }
+    const reason =
+      error instanceof Error ? error.message : "Naməlum xəta";
 
     if (chatId) {
       await sendMessage(chatId, "❌ Xəta baş verdi:\n" + clean(reason));
@@ -130,6 +170,6 @@ Başlıq, ssenari və 4 vizual səhnə təsviri ver. Fakt uydurma.`;
 export async function GET() {
   return NextResponse.json({
     status: "Telegram webhook hazırdır",
-    model: GEMINI_MODEL
+    models: ATTEMPTS
   });
 }
