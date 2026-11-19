@@ -180,7 +180,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const prompt = `Sən GLOBAL SHORTS STUDIO adlı peşəkar video ssenarisi hazırlayan AI sistemisən.
+    const prompt = "Yalnız OK yaz.";
 
 Azərbaycan dilində 45-60 saniyəlik maraqlı YouTube Shorts ssenarisi hazırla.
 
